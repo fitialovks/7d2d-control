@@ -56,18 +56,17 @@
 
 # ** CHANGE ME ** 
 # ----------------------------- 
-steam_user=""
+steam_user=$(cat user.txt)
 # ----------------------------- 
 
 
 # Change these values if needed 
 # ----------------------------- 
-HOME_DIR=~
-SAVE_GAME_DIR=${HOME_DIR}/7d2d-savegame 
+HOME_DIR=/home/7dtd
+SAVE_GAME_DIR=${HOME_DIR}/savegame 
 
-INSTALL_DIR=${HOME_DIR}/7d2d
-BACKUP_DIR=${HOME_DIR}/7d2d-backup
-PID_FILE=${HOME_DIR}/7d2d.pid  
+INSTALL_DIR=${HOME_DIR}/server
+BACKUP_DIR=${HOME_DIR}/backup
 STEAM_CMD_DIR=${HOME_DIR}/steamcmd 
 
 # use  "_64" for 64-bit, "" for 32-bit 
@@ -82,7 +81,7 @@ if [[ $EUID -eq 0 ]]; then
     exit 1
 fi
 if [ -z "${steam_user}" ]; then 
-    echo "ERROR: No steam user entered, you need to edit this file and write your steam username into variable steam_user, like: 'steam_user="lord_brittish"'"
+    echo "ERROR: No steam user entered, create file user.txt with steam login."
     exit 1
 fi
 
@@ -113,24 +112,7 @@ case "$1" in
     fi
   
     echo "Starting 7dtd..."
-    ${INSTALL_DIR}/7DaysToDie.x86${bitCount} -logfile ${HOME_DIR}/7d2d.log -quit -batchmode -nographics -configfile=${INSTALL_DIR}/serverconfig.xml -dedicated &
-    echo $! > ${PID_FILE} || (echo "error storing pid to ${PID_FILE}"; exit 1)  
-  ;;
-  
-  stop)
-    echo "Shutting down 7d2d..."
-    if [ ! -f ${PID_FILE} ]; then 
-       echo "No pid file: ${PID_FILE} assuming the service is not running."
-       exit 0
-    fi 
-    /bin/kill -TERM `cat ${PID_FILE}`
-    rm -f ${PID_FILE}
-  ;;
-
-  restart)
-    $0 stop
-    sleep 8
-    $0 start
+    ${INSTALL_DIR}/7DaysToDie.x86${bitCount} -logfile ${HOME_DIR}/7d2d.log -quit -batchmode -nographics -configfile=${INSTALL_DIR}/serverconfig.xml -dedicated
   ;;
 
   update)
