@@ -1,0 +1,11 @@
+#!/usr/bin/expect
+
+set timeout 10
+set hostname [lindex $argv 0]
+set password [lindex $argv 2]
+set port [lindex $argv 1]
+spawn telnet "$hostname" "$port"
+expect "Please enter password:"
+send "$password"
+expect "Press 'help' to get a list of all commands. Press 'exit' to end session."
+send "shutdown"

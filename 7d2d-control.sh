@@ -1,162 +1,125 @@
-#!/bin/bash
- 
-## 
-## 7 Days to Die  - Linux dedicated server - Steamcmd - Management script 
-##
-## Description: Simple Bash shell script to ease management of 7 Days to Die Dedicated linux server 
-## Version : 1.0, 28.11.2014
-## Author: mikezerosix 
-##
-## --------------------------
-## Quick how to for impatient
-## --------------------------
-## 0. log in as the user you want to run the game with (which can not be root !!!)
-## 1. copy this script to that user HOME and edit it for our Steam login username at line starting steam_user="" write your username inside the double quotes
-##  2.  and run it with param "update" :
-##    7d2d-constrol.sh update 
-##   -This installs everything 
-## 3. go the 7d2d directory under the HOME and edit serverconfig.xml and serveradmin.xml files for the game settings 
-## 4. start the game with command 
-##    7d2d-constrol.sh start
-## 5. Game on, ur done  !!!!!!!
-##
-## To stop 
-##   7d2d-constrol.sh stop  
-## To update 
-##   7d2d-constrol.sh stop
-## To backup 
-##   7d2d-constrol.sh backup
-##
-## Running  7d2d-constrol.sh without any parameter will print out help 
-##
-## ---------------------------------------------------
-## Default directories in current user HOME diretory. 
-## ---------------------------------------------------
-##  ~/steamcmd : the steam client to install and update the game
-##  ~/7d2d : the game itself, aka install dir
-##  ~/7d2d-savegame : this is where I would like the save game to go to, so far I have not been able to override the default loction
-##  ~/7d2d-backup : backup dir where backups are copied, auto backup on config and admin xml files on every update
-##  ~/7d2d.pid : pid file (Process id) that works as lock file. Start up creates this and stop deletes this. This pevents starting the server process multiple times. Server crash leaves this file which prevents starting, delete the file to start IF you are sure process is not already running. 
-##
-## ------------------------
-## Customizing locations 
-## ------------------------
-## To change file locations change the variables on top of the script
-##
-## ------------------------
-## Variables 
-## ------------------------
-## steam_user =  Your steam username, Steam client will prompt for password first run. default anonymous should work ok. 
-## home_dir = directory where everything is installed, make sure you have write permission to  
-## bitCount = determines which version to use: 64 or 32 - bit. "_64" for 64-bit, "" for 32-bit. Currently game for linux is only 32-bit 
+#!/bin/bash -e
 
-## NB: overwriting the SaveGameFolfer in serverconfing.xml is a bit hack-y, so it might not work 100%  
-## ---------------------------------------------------------------------------------------------------
+# Message to stderr and exit 1.
+errExit() {
+    echo "$@" >&2
+    exit 1
+}
 
+printUsage() {
+echo "Usage: $0 <task> <config>"
+}
 
-# ** CHANGE ME ** 
-# ----------------------------- 
-steam_user=$(cat user.txt)
-# ----------------------------- 
+printUsageAndExit() {
+  printUsage
+  exit 1
+}
 
+task="$1"
+cfg="$2"
 
-# Change these values if needed 
-# ----------------------------- 
-HOME_DIR=/home/7dtd
-SAVE_GAME_DIR=${HOME_DIR}/savegame 
+[ -n "$task" ] || printUsageAndExit
+[ -f "$cfg" ] || printUsageAndExit
 
-INSTALL_DIR=${HOME_DIR}/server
-BACKUP_DIR=${HOME_DIR}/backup
-STEAM_CMD_DIR=${HOME_DIR}/steamcmd 
+steam_user=""
+admin_pass=""
+home_dir=""
+server_name=""
 
-# use  "_64" for 64-bit, "" for 32-bit 
+. "$cfg"
+
+[ -n steam_user ] || errExit "Property steam_user not set in the config file ${cfg}"
+[ -n admin_pass ] || errExit "Property admin_pass not set in the config file ${cfg}"
+[ -n home_dir ] || errExit "Property home_dir not set in the config file ${cfg}"
+[ -n server_name ] || errExit "Property server_name not set in the config file ${cfg}"
+
+save_dir=${home_dir}/savegame/${server_name}
+server_dir=${home_dir}/server
+backup_dir=${home_dir}/backup
+steamcmd_dir=${home_dir}/steamcmd
+config_dir=${home_dir}/config
+log_dir=${home_dir}/log
+
+config_file=${config_dir}/${server_name}-config.xml
+admin_file=${config_dir}/${server_name}-admin.xml
+log_file=${log_dir}/${server_name}.log
+
+# use  "_64" for 64-bit, "" for 32-bit
 bitCount=""
 
-
-# Do NOT change anything below here 
-# --------------------------------
-echo ""
-if [[ $EUID -eq 0 ]]; then
-    echo "ERROR: This script must not be run using sudo or as the root user"
-    exit 1
-fi
-if [ -z "${steam_user}" ]; then 
-    echo "ERROR: No steam user entered, create file user.txt with steam login."
-    exit 1
-fi
-
-if [ ! -f ${STEAM_CMD_DIR}/steamcmd.sh ]; then
-  echo "" 
-  echo "Steam not found, installing steam..."
+installSteam() {
   echo ""
-  if [ ! -d ${STEAM_CMD_DIR} ]; then
-     mkdir ${STEAM_CMD_DIR}
+  echo "Installing steam..."
+  echo ""
+  dir=$1
+  [ -n ${dir} ] || errExit "Argument DIR is required"
+  if [ ! -d ${dir} ]; then
+     mkdir -p ${dir}
   fi
-         
-  if hash curl; then 
-     curl -s http://media.steampowered.com/installer/steamcmd_linux.tar.gz | tar -xz -C ${STEAM_CMD_DIR}
-  elif hash wget; then 
-     wget -q http://media.steampowered.com/installer/steamcmd_linux.tar.gz -O - | tar -xz -C ${STEAM_CMD_DIR}     
-  else 
+
+  if hash curl; then
+     curl -s http://media.steampowered.com/installer/steamcmd_linux.tar.gz | tar -xz -C ${dir}
+  elif hash wget; then
+     wget -q http://media.steampowered.com/installer/steamcmd_linux.tar.gz -O - | tar -xz -C ${dir}
+  else
     echo "No curl OR wget ??? WTF kind of server is this ?"
     exit 1
   fi
-fi  
+}
 
-case "$1" in
+echo ""
+[ $EUID -eq 0 ] && errExit "ERROR: This script must not be run using sudo or as the root user"
+[ -z "${steam_user}" ] && errExit "ERROR: No steam user entered, create file user.txt with steam login."
+
+[ -f ${steamcmd_dir}/steamcmd.sh ] || installSteam ${steamcmd_dir}
+
+case "$task" in
   start)
-    if [ -f ${PID_FILE} ]; then 
-      echo "ERROR: Can not start ! The pid file ${PID_FILE} exists, program might already be running."
-      echo "   If you are sure it is not running, then delete the pid file ${PID_FILE} and try again. "
-      exit 1
-    fi
-  
     echo "Starting 7dtd..."
-    ${INSTALL_DIR}/7DaysToDie.x86${bitCount} -logfile ${HOME_DIR}/7d2d.log -quit -batchmode -nographics -configfile=${INSTALL_DIR}/serverconfig.xml -dedicated
+    ${server_dir}/7DaysToDie.x86${bitCount} -logfile ${log_file} -quit -batchmode -nographics -configfile=${config_file} -dedicated
+  ;;
+
+  stop)
+    echo "Not supported yet."
   ;;
 
   update)
+    [ -d ${steamcmd_dir} ] || installSteam ${steamcmd_dir}
+
     echo "Updating 7d2d..."
-    $0 stop
-    if [ ! -d ${BACKUP_DIR} ]; then 
-      mkdir -p ${BACKUP_DIR}
-    fi  
-    if [ ! -d ${INSTALL_DIR} ]; then 
-      mkdir -p ${INSTALL_DIR}
-    fi  
+
+    [ -d ${backup_dir} ] || mkdir -p ${backup_dir}
+    [ -d ${server_dir} ] || mkdir -p ${server_dir}
+    [ -d ${config_dir} ] || mkdir -p ${config_dir}
+
+    [ -f ${config_file} ] && cp ${config_file} ${backup_dir}/${server_name}-config.xml.`date -I`
+    [ -f ${admin_file} ] && cp ${admin_file} ${backup_dir}/${server_name}-admin.xml.`date -I`
     
-    cp ${INSTALL_DIR}/serverconfig.xml ${BACKUP_DIR}/serverconfig.xml.`date -I`
-    cp ${INSTALL_DIR}/serveradmin.xml ${BACKUP_DIR}/serveradmin.xml.`date -I`
-    
-    sleep 8
-    ${STEAM_CMD_DIR}/steamcmd.sh +@ShutdownOnFailedCommand 1 +login "${steam_user}" +force_install_dir "${INSTALL_DIR}" +app_update 294420 validate +quit
-    sleep 5 
-    mv ${INSTALL_DIR}/serverconfig.xml ${INSTALL_DIR}/serverconfig.bk
-    grep -v "property name=\"SaveGameFolder\"" ${INSTALL_DIR}/serverconfig.bk|grep -v "</ServerSettings>" > ${INSTALL_DIR}/serverconfig.xml
-    echo "<!-- DO not edit SaveGameFolder, the value is overwritted in update by 7d2d-control.sh, edit the SAVE_GAME_DIR variable in 7d2d-constrol.sh instead -->" >> ${INSTALL_DIR}/serverconfig.xml    
-    echo "    <property name=\"SaveGameFolder\" value=\"${SAVE_GAME_DIR}\" />" >> ${INSTALL_DIR}/serverconfig.xml
-    echo "</ServerSettings>" >> ${INSTALL_DIR}/serverconfig.xml
-    
-    echo ""
-    echo " Update finished. Check serverconfig.xml and admin.xml before starting ! You can find backups in: ${BACKUP_DIR} "
+    ${steamcmd_dir}/steamcmd.sh +@ShutdownOnFailedCommand 1 +login "${steam_user}" +force_install_dir "${server_dir}" +app_update 294420 validate +quit
+
+    [ -f ${config_file} ] || cp ${server_dir}/serverconfig.xml ${config_file}
+
+    echo "Updated ${server_dir}"
+
+    $0 configure ${cfg}
   ;;
 
   backup) 
-    echo "Backuping 7d2d savegames from ${SAVE_GAME_DIR}..."
-    $0 stop
+    echo "Backuping 7d2d savegames from ${save_dir}..."
     sleep 8
-    if ! -d ${BACKUP_DIR}; then 
-      mkdir ${BACKUP_DIR}
-    fi  
-    tar cvzf ${BACKUP_DIR}/savegame-`date -I`.ta.gz ${SAVE_GAME_DIR} 
-    $0 start    
-  ;;   
-  help) 
-    grep "^##" $0 
-    $0 
-    ;;  
+    [ -d ${backup_dir} ] || mkdir ${backup_dir}
+    tar cvzf ${backup_dir}/${server_name}-`date -I`.tar.gz ${save_dir}
+  ;;
+
+  configure)
+    echo "Your configuration is in ${config_file}"
+    echo "Set SaveGameFolder to ${save_dir}"
+    #sed -i "s@<!--property name=\"SaveGameFolder\"[^>]+@<property name=\"SaveGameFolder\" value=\"\"/@" ${config_file}
+    #sed -i "s@name=\"SaveGameFolder\"[:space:]+value=\"[^\"]*@name=\"SaveGameFolder\" value=\"${save_dir}@" ${config_file}
+  ;;
+
   *)
-    echo "Usage: $0 start | stop | restart | update | backup |help"
+    printUsageAndExit
   ;;
 esac
 
